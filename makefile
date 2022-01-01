@@ -47,13 +47,13 @@ $(MNT):
 mount: disk $(MNT)
 	@DEV=$$(losetup -a | grep $(BUILD)/disk.img | grep -m 1 -o '/dev/loop[[:digit:]]*') && \
 	PART="p1" && \
-	($(BUILD)/marfs_fuse "$$DEV$$PART" -f $(MNT) &) && \
+	($(SU) $(BUILD)/marfs_fuse "$$DEV$$PART" -f $(MNT) &) && \
 	echo "Mounted $$DEV$$PART"
 
 umount:
 	@DEV=$$(losetup -a | grep $(BUILD)/disk.img | grep -m 1 -o '/dev/loop[[:digit:]]*') && \
 	$(SU) losetup -d "$$DEV" && \
-	umount $(MNT) && \
+	$(SU) umount $(MNT) && \
 	echo "Unmounted $$DEV$$PART" || \
 	echo "No disk to unmount"
 
