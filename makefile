@@ -47,7 +47,7 @@ $(MNT):
 mount: disk $(MNT)
 	@DEV=$$(losetup -a | grep $(BUILD)/disk.img | grep -m 1 -o '/dev/loop[[:digit:]]*') && \
 	PART="p1" && \
-	($(SU) $(BUILD)/marfs_fuse "$$DEV$$PART" -f $(MNT) &) && \
+	($(SU) $(BUILD)/marfs_fuse "$$DEV$$PART" -f $(MNT) -o allow_other &) && \
 	echo "Mounted $$DEV$$PART"
 
 umount:

@@ -16,6 +16,7 @@
 #define MARFS_NAME_LENGTH 32
 #define MARFS_ENTRY_SIZE 1024
 
+#define MARFS_EMPTY_ENTRY 0
 #define MARFS_DIR_ENTRY 1
 #define MARFS_FILE_ENTRY 2
 
@@ -29,8 +30,9 @@ struct marfs_header {
 	char magic[6];
 	u32 version;
 	u32 entry_size;
+	u32 entry_count;
 	struct marfs_pointer main;
-	u8 padding[MARFS_ENTRY_SIZE - 22];
+	u8 padding[MARFS_ENTRY_SIZE - 26];
 } PACKED;
 
 struct marfs_entry_header {
@@ -45,18 +47,27 @@ struct marfs_dir_entry_data {
 	struct marfs_pointer pointer;
 } PACKED;
 
-struct marfs_dir_entry {
+struct marfs_dir_entry_info {
 	struct marfs_entry_header header;
 	u32 count;
+} PACKED;
+
+struct marfs_dir_entry {
+	struct marfs_dir_entry_info info;
 	struct marfs_dir_entry_data entries[MARFS_DIR_ENTRY_COUNT];
-	u8 padding[MARFS_ENTRY_SIZE - sizeof(struct marfs_entry_header) - sizeof(u32) -
+	u8 padding[MARFS_ENTRY_SIZE - sizeof(struct marfs_dir_entry_info) -
 		   (MARFS_DIR_ENTRY_COUNT * sizeof(struct marfs_dir_entry_data))];
 } PACKED;
 
-struct marfs_file_entry {
+struct marfs_file_entry_info {
 	struct marfs_entry_header header;
+	u32 parent;
 	u32 size;
-	u8 data[MARFS_ENTRY_SIZE - sizeof(struct marfs_entry_header) - sizeof(u32)];
+} PACKED;
+
+struct marfs_file_entry {
+	struct marfs_file_entry_info info;
+	u8 data[MARFS_ENTRY_SIZE - sizeof(struct marfs_file_entry_info)];
 } PACKED;
 
 #endif
