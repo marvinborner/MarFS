@@ -108,6 +108,33 @@ static u8 read_entry_header(const char *path, u32 start, struct marfs_entry_head
 	return 0;
 }
 
+static int add_dir_entry(struct marfs_entry_header *parent, const char *name, u32 sector)
+{
+	u32 last = parent->id;
+	while (parent->next != MARFS_END)
+		last = parent->next;
+
+	struct marfs_dir_entry dir;
+	read_sector(last, sizeof(dir), &dir);
+
+	assert(dir.info.count + 1 < MARFS_DIR_ENTRY_COUNT); // TODO: Create new dir entry at end
+
+	struct marfs_dir_entry_data data = (struct marfs_dir_entry_data){
+		.length = strlen(name),
+		.pointer = MARFS_POINT(sector, sector),
+	};
+
+	if (data.length > MARFS_NAME_LENGTH)
+		return -EINVAL;
+
+	strcpy(data.name, name);
+	dir.entries[dir.info.count++] = data;
+
+	write_sector(last, sizeof(dir), &dir);
+
+	return 0;
+}
+
 /**
  * Fuse operations
  */
@@ -282,35 +309,41 @@ static int marfs_create(const char *path, mode_t mode, struct fuse_file_info *fi
 	if (!(base++))
 		return -EINVAL;
 
-	u32 last = parent.id;
-	while (parent.next != MARFS_END)
-		last = parent.next;
-
-	struct marfs_dir_entry dir;
-	read_sector(last, sizeof(dir), &dir);
-
-	assert(dir.info.count + 1 < MARFS_DIR_ENTRY_COUNT); // TODO: Create new dir entry at end
-
-	struct marfs_dir_entry_data data = (struct marfs_dir_entry_data){
-		.length = strlen(base),
-		.pointer = MARFS_POINT(sector, sector),
-	};
-
-	if (data.length > MARFS_NAME_LENGTH)
-		return -EINVAL;
-
-	strcpy(data.name, base);
-	dir.entries[dir.info.count++] = data;
-
-	write_sector(last, sizeof(dir), &dir);
-
-	return 0;
+	return add_dir_entry(&parent, base, sector);
 }
 
 static int marfs_mkdir(const char *path, mode_t mode)
 {
 	debug("mkdir() on %s", path);
-	return 0;
+	UNUSED(mode);
+
+	struct marfs_entry_header parent = { .type = 0 };
+	u8 aah = read_entry_header(path, header.main.head, &parent);
+	if (aah) {
+		debug("%s already exists\n", path);
+		errno = EEXIST;
+		return -1;
+	}
+	if (parent.type != MARFS_DIR_ENTRY) {
+		debug("%s could not get created\n", path);
+		return -1;
+	}
+
+	u32 sector = find_free_sector();
+	struct marfs_dir_entry_info info = {
+		.header.type = MARFS_DIR_ENTRY,
+		.header.id = sector,
+		.header.prev = MARFS_END,
+		.header.next = MARFS_END,
+		.count = 0,
+	};
+	write_sector(sector, sizeof(info), &info);
+
+	char *base = strrchr(path, '/');
+	if (!(base++))
+		return -EINVAL;
+
+	return add_dir_entry(&parent, base, sector);
 }
 
 static int marfs_unlink(const char *path)

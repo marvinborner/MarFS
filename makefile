@@ -45,13 +45,13 @@ $(MNT):
 	@mkdir -p $@
 
 mount: disk $(MNT)
-	@DEV=$$(losetup -a | grep $(BUILD)/disk.img | grep -m 1 -o '/dev/loop[[:digit:]]*') && \
+	@DEV=$$($(SU) losetup -a | grep $(BUILD)/disk.img | grep -m 1 -o '/dev/loop[[:digit:]]*') && \
 	PART="p1" && \
 	($(SU) $(BUILD)/marfs_fuse "$$DEV$$PART" -f $(MNT) -o allow_other &) && \
 	echo "Mounted $$DEV$$PART"
 
 umount:
-	@DEV=$$(losetup -a | grep $(BUILD)/disk.img | grep -m 1 -o '/dev/loop[[:digit:]]*') && \
+	@DEV=$$($(SU) losetup -a | grep $(BUILD)/disk.img | grep -m 1 -o '/dev/loop[[:digit:]]*') && \
 	$(SU) losetup -d "$$DEV" && \
 	$(SU) umount $(MNT) && \
 	echo "Unmounted $$DEV$$PART" || \
