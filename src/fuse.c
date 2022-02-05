@@ -221,7 +221,7 @@ static int marfs_readdir(const char *path, void *buf, fuse_fill_dir_t fill, off_
 		read_sector(sector, sizeof(d), &d);
 		for (u32 i = 0; i < d.info.count; i++)
 			fill(buf, d.entries[i].name, NULL, 0, 0);
-	} while ((sector = h.next) != MARFS_END);
+	} while ((sector = d.info.header.next) != MARFS_END);
 
 	return 0;
 }
@@ -229,7 +229,7 @@ static int marfs_readdir(const char *path, void *buf, fuse_fill_dir_t fill, off_
 static int marfs_read(const char *path, char *buf, size_t to_read, off_t offset,
 		      struct fuse_file_info *file_info)
 {
-	debug("read() on %s, %lu", path, to_read);
+	debug("read() on %s, %lu off %lu", path, to_read, offset);
 	UNUSED(offset);
 	UNUSED(file_info);
 
@@ -243,19 +243,35 @@ static int marfs_read(const char *path, char *buf, size_t to_read, off_t offset,
 
 	struct marfs_file_entry f;
 
-	// TODO: Multiple sector read
-	read_sector(h.id, sizeof(f), &f);
-	to_read = MIN(to_read, f.info.size);
-	memcpy(buf, f.data, MIN(sizeof(f.data), to_read));
+	u32 sector = h.id;
+	while (offset >= (u32)sizeof(f.data)) {
+		assert(sector != MARFS_END); // Invalid offset?
+		read_sector(sector, sizeof(h), &h);
+		offset -= sizeof(f.data);
+		sector = h.next;
+	}
 
-	return to_read;
+	u32 left = to_read;
+
+	do {
+		read_sector(sector, sizeof(f), &f);
+		memcpy(buf + (to_read - left), f.data + offset, MIN(sizeof(f.data), left) - offset);
+		offset = 0;
+
+		if (left <= MIN(sizeof(f.data), left))
+			left = 0;
+		else
+			left -= MIN(sizeof(f.data), left);
+	} while (left > 0 && (sector = f.info.header.next) != MARFS_END);
+
+	return to_read - left;
 }
 
 static int marfs_write(const char *path, const char *buf, size_t to_write, off_t offset,
 		       struct fuse_file_info *file_info)
 {
 	debug("write() on %s", path);
-	UNUSED(offset);
+	assert(offset == 0); // TODO?
 	UNUSED(file_info);
 
 	struct marfs_entry_header h;
@@ -267,14 +283,46 @@ static int marfs_write(const char *path, const char *buf, size_t to_write, off_t
 		return -EISDIR;
 
 	struct marfs_file_entry f;
-
-	// TODO: Multiple sector write
 	read_sector(h.id, sizeof(f), &f);
-	memcpy(f.data, buf, MIN(sizeof(f.data), to_write));
-	f.info.size = to_write; // TODO: Append??
-	write_sector(h.id, sizeof(f), &f);
 
-	return to_write;
+	u32 left = to_write;
+	u32 current = h.id;
+
+	while (1) {
+		// TODO: Something around here is wrong, producing scrambled files
+		memcpy(f.data, buf + (to_write - left), MIN(sizeof(f.data), left));
+		f.info.size = to_write;
+
+		if (left <= MIN(sizeof(f.data), left))
+			left = 0;
+		else
+			left -= MIN(sizeof(f.data), left);
+
+		if (left > 0) {
+			write_sector(current, sizeof(h),
+				     &f); // To fix find_free_sector - TODO: cleaner solution?
+			u32 next = f.info.header.next == MARFS_END ? find_free_sector() :
+									   f.info.header.next; // Recycle
+			f.info.header.next = next;
+			write_sector(current, sizeof(f), &f);
+
+			f.info.header.id = next;
+			f.info.header.prev = current;
+			f.info.header.next = MARFS_END;
+			f.info.size = 0;
+
+			current = next;
+		} else {
+			f.info.header.next = MARFS_END;
+			write_sector(current, sizeof(f), &f);
+			break;
+		}
+	}
+
+	if (left)
+		debug("non-zero left: %d", left);
+
+	return to_write - left;
 }
 
 static int marfs_create(const char *path, mode_t mode, struct fuse_file_info *file_info)

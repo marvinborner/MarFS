@@ -61,7 +61,6 @@ struct marfs_dir_entry {
 
 struct marfs_file_entry_info {
 	struct marfs_entry_header header;
-	u32 parent;
 	u32 size;
 } PACKED;
 
